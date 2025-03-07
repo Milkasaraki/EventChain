@@ -1,10 +1,11 @@
-;; EventTicketing Smart Contract - v1.0.0
-;; Basic implementation of event ticket tracking
+;; EventTicketing Smart Contract - v2.0.0
+;; Added history tracking and timestamp functionality
 
 (define-trait event-ticketing-trait
   (
     (issue-ticket (uint uint) (response bool uint))
     (update-ticket-status (uint uint) (response bool uint))
+    (get-ticket-history (uint) (response (list 10 {status: uint, timestamp: uint}) uint))
     (get-ticket-status (uint) (response uint uint))
   )
 )
@@ -24,13 +25,25 @@
 ;; Contract owner
 (define-data-var contract-owner principal tx-sender)
 
+;; Current timestamp counter
+(define-data-var timestamp-counter uint u0)
+
 ;; Ticket tracking map
 (define-map ticket-details 
   {ticket-id: uint} 
   {
     owner: principal,
-    current-status: uint
+    current-status: uint,
+    history: (list 10 {status: uint, timestamp: uint})
   }
+)
+
+;; Get current timestamp and increment counter
+(define-private (get-current-timestamp)
+  (begin
+    (var-set timestamp-counter (+ (var-get timestamp-counter) u1))
+    (var-get timestamp-counter)
+  )
 )
 
 ;; Only contract owner can perform certain actions
@@ -64,7 +77,8 @@
       {ticket-id: ticket-id}
       {
         owner: tx-sender,
-        current-status: initial-status
+        current-status: initial-status,
+        history: (list {status: initial-status, timestamp: (get-current-timestamp)})
       }
     )
     (ok true)
@@ -91,11 +105,27 @@
       {ticket-id: ticket-id}
       (merge ticket 
         {
-          current-status: new-status
+          current-status: new-status,
+          history: (unwrap-panic 
+            (as-max-len? 
+              (append (get history ticket) {status: new-status, timestamp: (get-current-timestamp)}) 
+              u10
+            )
+          )
         }
       )
     )
     (ok true)
+  )
+)
+
+;; Get ticket history
+(define-read-only (get-ticket-history (ticket-id uint))
+  (let 
+    (
+      (ticket (unwrap! (map-get? ticket-details {ticket-id: ticket-id}) ERR_INVALID_TICKET))
+    )
+    (ok (get history ticket))
   )
 )
 
